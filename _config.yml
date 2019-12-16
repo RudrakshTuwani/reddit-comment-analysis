@@ -1,4 +1,4 @@
 theme: jekyll-theme-minimal
-title: [The title of your site]
-description: [A short description of your site's purpose]
+title: [Analysis of Reddit comments on political subreddits]
+description: [This project aims to study political trends and viewpoints on Reddit, particularly in five of the most popular political subreddits (r/Conservative, r/Democrats, r/Liberal, r/Politics, and r/The_Donald).]
 show_downloads: "true"
