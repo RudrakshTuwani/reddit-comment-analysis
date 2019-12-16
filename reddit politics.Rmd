@@ -1,0 +1,246 @@
+---
+title: "Reddit Politics"
+output: html_document
+---
+
+```{r}
+library(ggplot2)
+library(RColorBrewer)
+library(wordcloud)
+library(tm)
+library(lubridate)
+library(dplyr)
+library(shiny)
+```
+
+
+Read data from five files, merge them, and get a summary
+```{r}
+setwd("C:/Users/Amita/Desktop/Amita/Harvard/Semester 1/Projects/BST 260/planb/data/posts")
+require(data.table)
+cons_data <- as.data.frame(fread("Conservative.tsv"))
+dem_data <- as.data.frame(fread("Democrats.tsv"))
+lib_data <- as.data.frame(fread("Liberal.tsv"))
+pol_data <- as.data.frame(fread("Politics.tsv"))
+don_data <- as.data.frame(fread("The_Donald.tsv"))
+#post_data <- bind_rows(cons_data, dem_data,lib_data, pol_data, don_data)
+#write.csv(post_data,"C:/Users/Amita/Desktop/Amita/Harvard/Semester 1/Projects/BST 260/planb/data/posts/posts.csv")
+#summary(post_data)
+```
+
+
+```{r}
+setwd("C:/Users/Amita/Desktop/Amita/Harvard/Semester 1/Projects/BST 260/planb/data/posts")
+require(data.table)
+post_data <- as.data.frame(fread("posts.csv"))
+summary(post_data)
+```
+
+Convert dates to standard format and extract day, month, and year.
+```{r}
+ as_datetime(post_data$created_utc)
+post_data$day <- day(post_data$date_created)
+post_data$month <- month(post_data$date_created)
+post_data$year <- year(post_data$date_created)
+post_data$monthyear <- paste(post_data$year,post_data$month)
+```
+
+
+Plot posts
+```{r}
+post_data$date <- as.Date(post_data$date_created)
+times <- post_data %>% 
+  group_by(subreddit,date) %>%
+  summarise(total=n()) 
+times %>%
+  ggplot() +
+  geom_smooth(aes(x=date,y=total,color=subreddit)) +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  ylab("Log scaled number of posts") +
+  xlab("Time") +
+  ggtitle("Number of posts in subreddits over time")
+```
+
+Plot subscribers
+```{r}
+subs <- post_data %>% 
+  na.omit(cols=subreddit_subscribers) %>%
+  group_by(subreddit,date) %>%
+  summarise(s=max(subreddit_subscribers,na.rm=TRUE))
+subs %>%
+  ggplot() +
+  geom_smooth(aes(x=date,y=s,color=subreddit)) +
+  scale_y_log10() +
+  ylab("Log scaled number of subscribers") +
+  xlab("Time") +
+  ggtitle("Number of subscribers in subreddits over time")
+```
+Boxplot
+```{r}
+scores<- post_data %>%
+  group_by(subreddit)
+scores %>%
+  ggplot() +
+  geom_boxplot(aes(x=subreddit,y=score,fill=subreddit),outlier.shape = NA) +
+  ylim(0, 70) +
+  xlab("Subreddits") +
+  ylab("Score") +
+  ggtitle("Score Distributions in Subreddits")
+```
+
+Create corpus for word clouds and clean it
+```{r}
+cleaning<- function(data){
+  docs <- Corpus(VectorSource(tolower(data$title)))
+  docs<- docs %>%
+  tm_map(removePunctuation) %>%
+  tm_map(removeWords, stopwords("english"))
+  return(docs)
+}
+```
+
+Get word counts
+```{r}
+word_counts <- function(docs)
+{
+  dtm <- TermDocumentMatrix(docs)
+  dtm <- removeSparseTerms(dtm, 0.99)
+  matrix <- as.matrix(dtm)
+  words <- sort(rowSums(matrix),decreasing=TRUE)
+  word_count <- data.frame(word = names(words),freq=words)
+  return(word_count)
+}
+```
+
+Create word clouds
+```{r}
+word_clouds <- function(word_count){
+  set.seed(1234)
+  wc <- wordcloud(words = word_count$word, freq = word_count$freq, min.freq = 1, max.words=200, random.order=FALSE, rot.per=0.35, colors=brewer.pal(8, "Dark2"))
+  return(wc)
+}
+```
+
+Form word clouds out of 5 subreddits 
+```{r}
+show(word_clouds(word_counts(cleaning(cons_data))))
+show(word_clouds(word_counts(cleaning(dem_data))))
+show(word_clouds(word_counts(cleaning(lib_data))))
+show(word_clouds(word_counts(cleaning(pol_data))))
+show(word_clouds(word_counts(cleaning(don_data))))
+```
+Polarisation
+# ```{r}
+# users <- post_data %>%
+#   filter(author != "[deleted]") %>%
+#   group_by(author,subreddit) %>%
+#   summarise(total = n()) 
+# users %>%
+#   ggplot(aes(x=subreddit,y=subreddit))
+#```
+
+<!-- Links in subreddits -->
+<!-- ```{r} -->
+<!-- domain <- function(x) {strsplit(gsub("http://|https://|www\\.", "", x), "/")[[c(1, 1)]]} -->
+<!-- doms <- t(as.data.frame(lapply(post_data$url,domain))) -->
+<!-- post_data <- cbind(post_data,doms) -->
+
+<!-- links <- post_data %>% dplyr::filter(domain != "reddit.com") %>% -->
+<!--   group_by(subreddit,domain) %>% -->
+<!--   summarise(n()) -->
+<!-- ``` -->
+
+
+Load comments and sentiment data
+```{r}
+setwd("C:/Users/Amita/Desktop/Amita/Harvard/Semester 1/Projects/BST 260/planb/data/comments")
+comments <- as.data.frame(fread("comments-reduced.tsv"))
+pos <- as.data.frame(fread("positive-comments.tsv"))
+neg <- as.data.frame(fread("negative-comments.tsv"))
+```
+
+Handle dates and times in comments
+```{r}
+comments$date_created <- as_datetime(comments$created)
+comments$day <- day(comments$date_created)
+comments$month <- month(comments$date_created)
+comments$year <- year(comments$date_created)
+comments$monthyear <- paste(comments$year,post_data$month)
+```
+
+Number of comments over time mentioning different candidates
+```{r}
+comments$date <- as.Date(comments$date_created)
+for(i in c("Conservative","democrats","Liberal","politics","The_Donald")){
+  times <- comments %>% 
+    filter(subreddit==i) %>%
+    group_by(candidate,date) %>%
+    summarise(total=n()) 
+  p <- times %>%
+    ggplot() +
+    geom_smooth(aes(x=date,y=total,color=candidate)) +
+    scale_y_log10() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    xlab("Time") +
+    ylab("Number of comments mentioning candidate") +
+    ggtitle(i)
+  show(p)
+}
+
+```
+
+Load aggregate sentiment data
+```{r}
+setwd("C:/Users/Amita/Desktop/Amita/Harvard/Semester 1/Projects/BST 260/planb/data/comments")
+agg <- as.data.frame(fread("comments-agg-sentiment.tsv"))
+tw <- as.data.frame(fread("comments-timewise-sentiment.tsv"))
+```
+
+
+Sentiment score grouping 
+```{r}
+library(reshape2)
+for(i in c("Conservative","democrats","Liberal","politics","The_Donald")){
+  sents <- agg %>%
+    filter(subreddit==i) %>%
+    group_by(candidate) %>%
+    melt(id.vars="candidate",measure.vars=c("positive","negative"))
+  p<-sents %>%
+    ggplot(aes(x=candidate,y=value,fill=variable)) +
+    geom_bar(stat="identity",position="fill") +
+    xlab("Candidate") +
+    ylab("Sentiment") +
+    ggtitle(i)
+  show(p)
+}
+```
+
+Timewise aggregate sentiments for candidates
+```{r}
+tw$date <- as_datetime(tw$timestamp)
+for(i in c("Conservative","democrats","Liberal","politics","The_Donald")){
+  times <- tw %>% 
+    filter(subreddit==i) %>%
+    group_by(candidate,date) 
+  p <- times %>%
+    ggplot() +
+    geom_smooth(aes(x=date,y=score,color=candidate)) +
+    scale_y_log10() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    xlab("Time") +
+    ylab("Score aggregate") +
+    ggtitle(i)
+  show(p)
+}
+```
+
+
+Frequently used words in positive and negative comments
+```{r}
+names(pos)[names(pos) == "body"] <- "title"
+names(neg)[names(neg) == "body"] <- "title"
+show(word_clouds(word_counts(cleaning(pos))))
+show(word_clouds(word_counts(cleaning(neg))))
+```
+
